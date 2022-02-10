@@ -131,7 +131,16 @@ sys_env_set_trapframe(envid_t envid, struct Trapframe *tf)
 	// LAB 5: Your code here.
 	// Remember to check whether the user has supplied us with a good
 	// address!
-	panic("sys_env_set_trapframe not implemented");
+	// panic("sys_env_set_trapframe not implemented");
+	struct Env *e;
+	if (envid2env(envid, &e, 1)) {
+		return -E_BAD_ENV;
+	}
+
+	e->env_tf = *tf;
+	e->env_tf.tf_eflags |= FL_IF;
+	e->env_tf.tf_eflags &= ~FL_IOPL_MASK;
+	return 0;
 }
 
 // Set the page fault upcall for 'envid' by modifying the corresponding struct
@@ -330,7 +339,8 @@ sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 		struct PageInfo *p = page_lookup(curenv->env_pgdir, srcva, &pte);
 		if (!p) return -E_INVAL;
 
-		if ((*pte & perm) != perm) return -E_INVAL;
+		if (!(perm & PTE_P ) || !(perm & PTE_U)) return -E_INVAL;
+        if (perm & (~ PTE_SYSCALL)) return -E_INVAL;  
 
 		if ((perm & PTE_W) && !(*pte & PTE_W)) return -E_INVAL;
 
@@ -372,6 +382,7 @@ sys_ipc_recv(void *dstva)
 	curenv->env_ipc_recving = 1;
 	curenv->env_status = ENV_NOT_RUNNABLE;
 	curenv->env_ipc_dstva = dstva;
+	curenv->env_ipc_from = 0;
 	sys_yield();
 	return 0;
 }
@@ -427,6 +438,9 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 
 	case SYS_ipc_recv:
 		return sys_ipc_recv((void *)a1);
+
+	case SYS_env_set_trapframe:
+		return sys_env_set_trapframe(a1, (struct Trapframe *)a2);
 
 	default:
 		return -E_INVAL;

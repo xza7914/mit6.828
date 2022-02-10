@@ -70,7 +70,12 @@ duppage(envid_t envid, unsigned pn)
 
 	// LAB 4: Your code here.
 	void *addr = (void *)(pn * PGSIZE);
-	if (uvpt[pn] & (PTE_W|PTE_COW)) {
+	if (uvpt[pn] & PTE_SHARE) {
+		r = sys_page_map(0, addr, envid, addr, PTE_SYSCALL);
+		if (r < 0) {
+			panic("sys_page_map SHARE:%e", r);
+		}
+	} else if (uvpt[pn] & (PTE_W|PTE_COW)) {
 		if ((r = sys_page_map(0, addr, envid, addr, PTE_COW | PTE_U | PTE_P)) < 0)
 			panic("sys_page_map COW:%e", r);
 
@@ -116,14 +121,10 @@ fork(void)
 		return 0;
 	}
 
-	extern unsigned char end[];
-	for (addr = (uint8_t *)UTEXT; addr < end; addr += PGSIZE) {
-		if ((uvpd[PDX(addr)] & PTE_P) && (uvpt[PGNUM(addr)] & PTE_P) && (uvpt[PGNUM(addr)] & PTE_U)) {
-			duppage(envid, PGNUM(addr));
-		}
-	}
-
-	duppage(envid, PGNUM(ROUNDDOWN(&addr, PGSIZE)));
+	for(addr = 0; addr < (uint8_t *)USTACKTOP; addr += PGSIZE) {
+        if((uvpd[PDX(addr)] & PTE_P) && (uvpt[PGNUM(addr)] & PTE_P) && (uvpt[PGNUM(addr)] & PTE_U))
+            duppage(envid, PGNUM(addr));
+    }
 
 	int r;
 	if ((r = sys_page_alloc(envid, (void *)(UXSTACKTOP - PGSIZE), PTE_P | PTE_U | PTE_W))) {
